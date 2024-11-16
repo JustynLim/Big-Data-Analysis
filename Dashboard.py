@@ -70,7 +70,7 @@ with col3:
         if section == "Explorative Data Analysis":
             analysis_type = st.selectbox(
                 "Analysis Type",
-                ["Monthly Promotions vs Normal Sales", "Cumulative Sales of Promotion and Normal Sales Throughout the Months"]
+                ["Monthly Promotions vs Normal Sales", "Montly Sales Distribution", "Cumulative Sales of Promotion and Normal Sales Throughout the Months"]
             )
         elif section == "Machine Learning":
             analysis_type = st.selectbox(
@@ -345,6 +345,26 @@ elif navigation == "Correlation Testing":
             # Display the plot in Streamlit
             st.pyplot(fig)
 
+        elif analysis_type == "Montly Sales Distribution":
+            # === Code 5: Monthly Sales Distribution ===
+            valid_data = df[
+                (df['Status'] == 'Shipped') &
+                (df['Qty'] >= 1) &
+                (df['Amount'] > 0) &
+                df[['ship-city', 'ship-state', 'ship-postal-code']].notnull().all(axis=1)
+            ]
+            monthly_sales = valid_data.groupby(valid_data['Date'].dt.strftime('%m'))['Order ID'].count()
+        
+            plt.figure(figsize=(10, 6))
+            plt.bar(monthly_sales.index, monthly_sales.values)
+            for i, v in enumerate(monthly_sales.values):
+                plt.text(i, v, str(v), ha='center', va='bottom')
+            plt.xlabel('Month')
+            plt.ylabel('Number of Orders')
+            plt.title('Monthly Sales Distribution')
+            plt.xticks(rotation=45)
+            st.pyplot(plt)
+        
         elif analysis_type == "Cumulative Sales of Promotion and Normal Sales Throughout the Months":
             # Data Cleaning and Preparation
             df['Date'] = pd.to_datetime(df['Date'], format='%m-%d-%y', errors='coerce')
