@@ -10,6 +10,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from imblearn.over_sampling import SMOTE
 from scipy.stats import ttest_rel
+from sklearn.cluster import KMeans, DBSCAN
+import numpy as np
+import os
+from threadpoolctl import threadpool_limits
 
 # Set page configuration
 st.set_page_config(layout="wide", page_title="E-commerce Sales Dashboard")
@@ -37,7 +41,10 @@ with col1:
 
 with col2:
     if navigation == "Public Analysis":
-        pass
+        section = st.selectbox(
+            "Select Section",
+            ["Explorative Data Analysis"]
+        )
     elif navigation == "Hypothesis Testing":
         section = st.selectbox(
             "Select Section",
@@ -51,10 +58,11 @@ with col2:
 
 with col3:
     if navigation == "Public Analysis":
-        analysis_type = st.selectbox(
-            "Analysis Type", 
-            ["Total Sales by Category", "Fulfillment & Category Sales", "Order Status Distribution"]
-        )
+        if section == "Explorative Data Analysis":
+            analysis_type = st.selectbox(
+                "Analysis Type", 
+                ["Total Sales by Category", "Fulfillment & Category Sales", "Order Status Distribution"]
+            )
     elif navigation == "Hypothesis Testing":
         if section == "Explorative Data Analysis":
             analysis_type = st.selectbox(
@@ -75,97 +83,98 @@ with col3:
         elif section == "Machine Learning":
             analysis_type = st.selectbox(
                 "Analysis Type",
-                ["Promotional vs Non-Promotional Sales Distribution by Model Type", "Sales Distribution by Model Predictions"]
+                ["Clustering Analysis: K-means and DBSCAN on Cumulative Sales"]
             )
 
 # Navigation logic
 if navigation == "Public Analysis":
-    if analysis_type == "Total Sales by Category":
-        # === Code 1: Total Sales by Category Pie Chart ===
-        df_filtered = df[(df['Status'] != 'Cancelled') & (df['Status'] != 'Pending') & (df['Qty'] >= 1)]
-        summary = df_filtered.groupby('Category')['Order ID'].nunique().reset_index(name='Total Sales')
+    if section == "Explorative Data Analysis":
+        if analysis_type == "Total Sales by Category":
+            # === Code 1: Total Sales by Category Pie Chart ===
+            df_filtered = df[(df['Status'] != 'Cancelled') & (df['Status'] != 'Pending') & (df['Qty'] >= 1)]
+            summary = df_filtered.groupby('Category')['Order ID'].nunique().reset_index(name='Total Sales')
+    
+            other_categories = summary[summary['Category'].isin(['Blouse', 'Bottom', 'Dupatta', 'Ethnic Dress', 'Saree'])]
+            other_sales = other_categories['Total Sales'].sum()
+    
+            summary = summary[~summary['Category'].isin(['Blouse', 'Bottom', 'Dupatta', 'Ethnic Dress', 'Saree'])]
+            other_row = pd.DataFrame({'Category': ['Other'], 'Total Sales': [other_sales]})
+            summary = pd.concat([summary, other_row], ignore_index=True)
+    
+            plt.figure(figsize=(8, 8))
+            plt.pie(summary['Total Sales'], labels=summary['Category'], autopct='%1.1f%%', startangle=90, counterclock=False)
+            plt.title('Total Sales by Category')
+            st.pyplot(plt)
 
-        other_categories = summary[summary['Category'].isin(['Blouse', 'Bottom', 'Dupatta', 'Ethnic Dress', 'Saree'])]
-        other_sales = other_categories['Total Sales'].sum()
-
-        summary = summary[~summary['Category'].isin(['Blouse', 'Bottom', 'Dupatta', 'Ethnic Dress', 'Saree'])]
-        other_row = pd.DataFrame({'Category': ['Other'], 'Total Sales': [other_sales]})
-        summary = pd.concat([summary, other_row], ignore_index=True)
-
-        plt.figure(figsize=(8, 8))
-        plt.pie(summary['Total Sales'], labels=summary['Category'], autopct='%1.1f%%', startangle=90, counterclock=False)
-        plt.title('Total Sales by Category')
-        st.pyplot(plt)
-
-    elif analysis_type == "Fulfillment & Category Sales":
-        # === Code 2: Fulfillment Percentage and Top 10 Categories ===
-        valid_orders = df[df["Status"].str.contains("Shipped", case=False, na=False)]
-        total_sales = valid_orders["Amount"].sum()
-        fulfillment_counts = valid_orders["Fulfilment"].value_counts(normalize=True) * 100
-        category_sales = valid_orders.groupby("Category")["Amount"].sum().sort_values(ascending=False)
-        category_sales_pct = (category_sales / total_sales) * 100
-
-        fig, axes = plt.subplots(1, 2, figsize=(22, 8))
-
-        fulfillment_counts.plot.pie(
-            autopct='%1.1f%%', ax=axes[0], startangle=90, explode=(0, 0.1),
-            colors=['#4CAF50', '#FF9800'], shadow=True
-        )
-        axes[0].set_ylabel('')
-        axes[0].set_title('Fulfillment Percentage')
-
-        top_10_categories = category_sales.head(10)
-        top_10_categories_pct = category_sales_pct.head(10)
-        bars = axes[1].bar(top_10_categories.index, top_10_categories, color='#03A9F4', edgecolor='black')
-
-        for bar, amount, pct in zip(bars, top_10_categories, top_10_categories_pct):
-            axes[1].text(
-                bar.get_x() + bar.get_width() / 2, bar.get_height() + 10000, 
-                f"{amount:,.0f} INR\n({pct:.1f}%)", ha='center', va='bottom'
+        elif analysis_type == "Fulfillment & Category Sales":
+            # === Code 2: Fulfillment Percentage and Top 10 Categories ===
+            valid_orders = df[df["Status"].str.contains("Shipped", case=False, na=False)]
+            total_sales = valid_orders["Amount"].sum()
+            fulfillment_counts = valid_orders["Fulfilment"].value_counts(normalize=True) * 100
+            category_sales = valid_orders.groupby("Category")["Amount"].sum().sort_values(ascending=False)
+            category_sales_pct = (category_sales / total_sales) * 100
+    
+            fig, axes = plt.subplots(1, 2, figsize=(22, 8))
+    
+            fulfillment_counts.plot.pie(
+                autopct='%1.1f%%', ax=axes[0], startangle=90, explode=(0, 0.1),
+                colors=['#4CAF50', '#FF9800'], shadow=True
             )
-        axes[1].set_title('Top 10 Product Categories by Sales (with Percentage)')
-        axes[1].set_xlabel('Category')
-        axes[1].set_ylabel('Sales Amount (INR)')
-        axes[1].tick_params(axis='x', rotation=45)
-        fig.subplots_adjust(wspace=0.3)
-        plt.tight_layout()
-        st.pyplot(fig)
-
-    elif analysis_type == "Order Status Distribution":
-        order_status_counts = pd.DataFrame({
-            'Status': ['Shipped', 'Cancelled', 'Pending'],
-            'Percentage': [80, 15, 5]
-        })
-        shipped_cancelled_data = pd.DataFrame({
-            'Status': ['Shipped', 'Cancelled'],
-            'Percentage': [84.2, 15.8]
-        })
-        
-        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-        sns.barplot(
-            data=order_status_counts, 
-            x='Status', 
-            y='Percentage', 
-            ax=axes[0],
-            palette=['green', 'red', 'gray']
-        )
-        axes[0].set_title('Order Status Distribution')
-        axes[0].set_ylim(0, 100)
-        for index, row in order_status_counts.iterrows():
-            axes[0].text(index, row['Percentage'] + 1, f"{row['Percentage']}%", ha='center')
-        
-        sns.barplot(
-            data=shipped_cancelled_data, 
-            x='Status', 
-            y='Percentage', 
-            ax=axes[1],
-            palette=['green', 'red']
-        )
-        axes[1].set_title('Shipped vs Cancelled Distribution')
-        axes[1].set_ylim(0, 100)
-        for index, row in shipped_cancelled_data.iterrows():
-            axes[1].text(index, row['Percentage'] + 1, f"{row['Percentage']}%", ha='center')
-        st.pyplot(fig)
+            axes[0].set_ylabel('')
+            axes[0].set_title('Fulfillment Percentage')
+    
+            top_10_categories = category_sales.head(10)
+            top_10_categories_pct = category_sales_pct.head(10)
+            bars = axes[1].bar(top_10_categories.index, top_10_categories, color='#03A9F4', edgecolor='black')
+    
+            for bar, amount, pct in zip(bars, top_10_categories, top_10_categories_pct):
+                axes[1].text(
+                    bar.get_x() + bar.get_width() / 2, bar.get_height() + 10000, 
+                    f"{amount:,.0f} INR\n({pct:.1f}%)", ha='center', va='bottom'
+                )
+            axes[1].set_title('Top 10 Product Categories by Sales (with Percentage)')
+            axes[1].set_xlabel('Category')
+            axes[1].set_ylabel('Sales Amount (INR)')
+            axes[1].tick_params(axis='x', rotation=45)
+            fig.subplots_adjust(wspace=0.3)
+            plt.tight_layout()
+            st.pyplot(fig)
+    
+        elif analysis_type == "Order Status Distribution":
+            order_status_counts = pd.DataFrame({
+                'Status': ['Shipped', 'Cancelled', 'Pending'],
+                'Percentage': [80, 15, 5]
+            })
+            shipped_cancelled_data = pd.DataFrame({
+                'Status': ['Shipped', 'Cancelled'],
+                'Percentage': [84.2, 15.8]
+            })
+            
+            fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+            sns.barplot(
+                data=order_status_counts, 
+                x='Status', 
+                y='Percentage', 
+                ax=axes[0],
+                palette=['green', 'red', 'gray']
+            )
+            axes[0].set_title('Order Status Distribution')
+            axes[0].set_ylim(0, 100)
+            for index, row in order_status_counts.iterrows():
+                axes[0].text(index, row['Percentage'] + 1, f"{row['Percentage']}%", ha='center')
+            
+            sns.barplot(
+                data=shipped_cancelled_data, 
+                x='Status', 
+                y='Percentage', 
+                ax=axes[1],
+                palette=['green', 'red']
+            )
+            axes[1].set_title('Shipped vs Cancelled Distribution')
+            axes[1].set_ylim(0, 100)
+            for index, row in shipped_cancelled_data.iterrows():
+                axes[1].text(index, row['Percentage'] + 1, f"{row['Percentage']}%", ha='center')
+            st.pyplot(fig)
 
 elif navigation == "Hypothesis Testing":
     if section == "Explorative Data Analysis":
@@ -424,117 +433,70 @@ elif navigation == "Correlation Testing":
             plt.figtext(0.5, -0.1, f"T-test: T-statistic = {t_stat:.2f}, P-value = {p_value:.4f}", ha='center', fontsize=10)
             st.pyplot(plt)
 
-    if section == "Machine Learning":
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Month'] = df['Date'].dt.month_name()
-        
-        # Filter out March
-        df = df[df['Month'] != 'March']
-        
-        # Classify Sales Type and Model Type
-        df['Sales Type'] = df['promotion-ids'].notnull().replace({True: 'Promotion', False: 'Normal'})
-        df['Model Type'] = df['Fulfilment'].replace({'Merchant': 'Regression', 'Amazon': 'Random Forest'})
-        
-        # Add Real Data as an additional Model Type
-        real_data = df.copy()
-        real_data['Model Type'] = 'Real Data'
-        df_combined = pd.concat([df, real_data])
-        
-        # Define categorical order
-        df_combined['Month'] = pd.Categorical(df_combined['Month'], categories=["April", "May", "June"], ordered=True)
-        df_combined['Model Type'] = pd.Categorical(df_combined['Model Type'], categories=["Regression", "Random Forest", "Real Data"], ordered=True)
-        if analysis_type == "Promotional vs Non-Promotional Sales Distribution by Model Type":
-            # Aggregate data
-            aggregated_data = df_combined.groupby(['Month', 'Model Type', 'Sales Type']).size().reset_index(name='Total Sales')
-            promotional_data = aggregated_data[aggregated_data['Sales Type'] == 'Promotion']
-            non_promotional_data = aggregated_data[aggregated_data['Sales Type'] == 'Normal']
-    
-            # Unified y-axis range
-            y_max = max(promotional_data['Total Sales'].max(), non_promotional_data['Total Sales'].max())
-    
-            # Create two side-by-side plots
-            fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
-    
-            # Promotional Sales
-            sns.barplot(
-                data=promotional_data,
-                x='Month',
-                y='Total Sales',
-                hue='Model Type',
-                palette='viridis',
-                ci=None,
-                ax=axes[0]
+    elif section == "Machine Learning":
+        if analysis_type == "Clustering Analysis: K-means and DBSCAN on Cumulative Sales":
+            st.subheader("Clustering Analysis: K-means and DBSCAN on Cumulative Sales")
+            
+            # Convert 'Date' to datetime and clean data
+            df['Date'] = pd.to_datetime(df['Date'], format='%m-%d-%y', errors='coerce')
+            df.dropna(subset=['Date'], inplace=True)
+            valid_data = df[
+                (df['Status'] == 'Shipped') &
+                (df['Qty'] >= 1) &
+                (df['Amount'] > 0) &
+                df[['ship-city', 'ship-state', 'ship-postal-code']].notnull().all(axis=1)
+            ]
+            valid_data['Sales Type'] = valid_data['promotion-ids'].apply(lambda x: 'Promotion Sales' if pd.notnull(x) else 'Normal Sales')
+            
+            # Aggregate daily sales by date and type
+            daily_sales = valid_data.groupby(['Date', 'Sales Type'])['Qty'].sum().unstack(fill_value=0).reset_index()
+            daily_sales.rename(columns={'Normal Sales': 'Normal Sales', 'Promotion Sales': 'Promotion Sales'}, inplace=True)
+            daily_sales['Cumulative Normal Sales'] = daily_sales['Normal Sales'].cumsum()
+            daily_sales['Cumulative Promotion Sales'] = daily_sales['Promotion Sales'].cumsum()
+            
+            # Prepare features for clustering
+            clustering_features = daily_sales[['Cumulative Normal Sales', 'Cumulative Promotion Sales']]
+            scaler = StandardScaler()
+            scaled_features = scaler.fit_transform(clustering_features)
+            
+            # --- K-means Clustering ---
+            k = 3  # Number of clusters
+            with threadpool_limits(limits=1, user_api='blas'):
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
+                daily_sales['KMeans Cluster'] = kmeans.fit_predict(scaled_features)
+            
+            # --- DBSCAN Clustering ---
+            dbscan = DBSCAN(eps=1.2, min_samples=5)
+            daily_sales['DBSCAN Cluster'] = dbscan.fit_predict(scaled_features)
+            num_dbscan_clusters = len(set(daily_sales['DBSCAN Cluster'])) - (1 if -1 in daily_sales['DBSCAN Cluster'] else 0)
+            st.write(f"Number of clusters identified by DBSCAN (excluding noise): {num_dbscan_clusters}")
+            
+            # Visualization
+            fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+            
+            # K-means clustering plot
+            axes[0].scatter(
+                daily_sales['Cumulative Normal Sales'],
+                daily_sales['Cumulative Promotion Sales'],
+                c=daily_sales['KMeans Cluster'],
+                cmap='viridis',
+                s=50
             )
-            axes[0].set_title('Promotional Sales Distribution by Model Type', fontsize=16)
-            axes[0].set_xlabel('Month', fontsize=14)
-            axes[0].set_ylabel('Total Sales (count)', fontsize=14)
-            axes[0].set_ylim(0, y_max)
-            axes[0].legend(title='Model Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-            axes[0].tick_params(axis='x', rotation=45)
-    
-            # Annotate bars
-            for p in axes[0].patches:
-                axes[0].annotate(f"{p.get_height():,.0f}",
-                                 (p.get_x() + p.get_width() / 2., p.get_height()),
-                                 ha='center', va='center', fontsize=10, color='black', xytext=(0, 5),
-                                 textcoords='offset points')
-    
-            # Non-Promotional Sales
-            sns.barplot(
-                data=non_promotional_data,
-                x='Month',
-                y='Total Sales',
-                hue='Model Type',
-                palette='viridis',
-                ci=None,
-                ax=axes[1]
+            axes[0].set_title("K-means Clustering")
+            axes[0].set_xlabel("Cumulative Normal Sales")
+            axes[0].set_ylabel("Cumulative Promotion Sales")
+            
+            # DBSCAN clustering plot
+            axes[1].scatter(
+                daily_sales['Cumulative Normal Sales'],
+                daily_sales['Cumulative Promotion Sales'],
+                c=daily_sales['DBSCAN Cluster'],
+                cmap='viridis',
+                s=50
             )
-            axes[1].set_title('Non-Promotional Sales Distribution by Model Type', fontsize=16)
-            axes[1].set_xlabel('Month', fontsize=14)
-            axes[1].set_ylabel('', fontsize=14)  # No label to avoid redundancy
-            axes[1].set_ylim(0, y_max)
-            axes[1].legend(title='Model Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-            axes[1].tick_params(axis='x', rotation=45)
-    
-            # Annotate bars
-            for p in axes[1].patches:
-                axes[1].annotate(f"{p.get_height():,.0f}",
-                                 (p.get_x() + p.get_width() / 2., p.get_height()),
-                                 ha='center', va='center', fontsize=10, color='black', xytext=(0, 5),
-                                 textcoords='offset points')
-    
-            # Adjust layout and display
+            axes[1].set_title("DBSCAN Clustering")
+            axes[1].set_xlabel("Cumulative Normal Sales")
+            axes[1].set_ylabel("Cumulative Promotion Sales")
+            
             plt.tight_layout()
             st.pyplot(fig)
-    
-        elif analysis_type == "Sales Distribution by Model Predictions":
-            # Aggregate data
-            aggregated_data = df_combined.groupby(['Month', 'Model Type', 'Sales Type']).size().reset_index(name='Total Sales')
-    
-            # Initialize FacetGrid
-            g = sns.FacetGrid(
-                aggregated_data,
-                col="Model Type",
-                height=6,
-                aspect=1.2,
-                sharey=False
-            )
-            g.map_dataframe(sns.barplot, x='Month', y='Total Sales', hue='Sales Type', palette='viridis', ci=None)
-    
-            # Adjust titles and labels
-            g.add_legend(title='Sales Type')
-            g.set_titles("{col_name}")
-            g.set_axis_labels("Month", "Total Sales")
-            g.fig.suptitle(
-                'Total Sales Distribution by Model Predictions and Real Data\n(Normal vs. Promotion Sales)',
-                fontsize=16
-            )
-    
-            # Rotate x-axis labels
-            for ax in g.axes.flatten():
-                for label in ax.get_xticklabels():
-                    label.set_rotation(45)
-    
-            # Display the plot
-            plt.tight_layout()
-            st.pyplot(g.fig)
