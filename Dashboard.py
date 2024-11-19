@@ -15,13 +15,15 @@ import numpy as np
 import os
 from threadpoolctl import threadpool_limits
 
+file_path = 'Amazon Sale Report.csv'
+
 # Set page configuration
 st.set_page_config(layout="wide", page_title="E-commerce Sales Dashboard")
 
 # Load data with caching
 @st.cache_data
 def load_data():
-    df = pd.read_csv("Github/Big-Data-Analysis/Amazon Sale Report.csv", low_memory=False)
+    df = pd.read_csv(file_path, low_memory=False)
     df['Date'] = pd.to_datetime(df['Date'], format='%m-%d-%y', errors='coerce')
     return df
 
@@ -181,7 +183,7 @@ elif navigation == "Hypothesis Testing":
         if analysis_type == "Shipping Preference Among Top 51% of Spenders":
             filtered_data = df[df['ship-service-level'].isin(['Expedited', 'Standard'])]
             sorted_data = filtered_data.sort_values(by='Amount', ascending=False)
-            cutoff_index = int(len(sorted_data) * 0.90)
+            cutoff_index = int(len(sorted_data) * 0.51)
             top_51_data = sorted_data.iloc[:cutoff_index]
     
             shipping_preference_counts = top_51_data['ship-service-level'].value_counts()
@@ -226,7 +228,7 @@ elif navigation == "Hypothesis Testing":
     elif section == "Machine Learning":
         if analysis_type == "Shipping Preferences by Algorithm and Actual Data":
             # Load and filter the dataset
-            file_path = 'Github/Big-Data-Analysis/Amazon Sale Report.csv'
+            # file_path = 'Github/Big-Data-Analysis/Amazon Sale Report.csv'
             data = pd.read_csv(file_path, low_memory=False)
             filtered_data = data[data['ship-service-level'].isin(['Expedited', 'Standard'])]
     
@@ -295,7 +297,7 @@ elif navigation == "Correlation Testing":
     if section == "Explorative Data Analysis":
         if analysis_type == "Monthly Promotions vs Normal Sales":
             # Load the dataset
-            amazon_sales_data = pd.read_csv("Github/Big-Data-Analysis/Amazon Sale Report.csv", low_memory=False)
+            amazon_sales_data = pd.read_csv(file_path, low_memory=False)
             
             # Data Cleaning
             # Convert 'Date' to datetime format and extract the month
